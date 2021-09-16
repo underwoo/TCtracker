@@ -1,7 +1,8 @@
 # Basic lightweight container
 FROM alpine:3.13 as baseos
 RUN apk update
-RUN apk add --no-cache automake autoconf bash build-base curl-dev flex git gfortran hdf5-dev libcurl libexecinfo-dev tcsh zlib-dev
+RUN apk add --no-cache automake autoconf bash bison build-base coreutils curl-dev expat-dev findutils \
+    flex git gfortran hdf5-dev libcurl libexecinfo-dev libtool m4 perl tcsh texinfo util-linux zlib-dev
 RUN apk add --no-cache bash build-base vim
 
 FROM baseos as ncpkgs
@@ -20,6 +21,14 @@ WORKDIR netcdf-fortran
 RUN ./configure --prefix=/usr
 RUN make -j4 install
 
+# UDUNITS
+WORKDIR /
+RUN git clone https://github.com/Unidata/UDUNITS-2.git
+WORKDIR UDUNITS-2
+RUN autoreconf -if
+RUN ./configure --prefix=/usr
+RUN make -j4 install
+
 # NCO Utilities
 WORKDIR /
 RUN git clone -b 4.9.0 https://github.com/nco/nco.git
@@ -29,7 +38,7 @@ RUN make -j4 install
 
 # Remove source codes to keep image size down
 WORKDIR /
-RUN rm -fR netcdf-c netcdf-fortran nco
+RUN rm -fR netcdf-c netcdf-fortran nco UDUNITS-2
 
 
 FROM ncpkgs
