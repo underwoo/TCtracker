@@ -206,7 +206,9 @@ foreach var (${varlist})
             gcp -cd ${filelist} $TSTORM_TEMP/tmp/
          else
             mkdir -p $TSTORM_TEMP/tmp/
-            cp ${filelist} $TSTORM_TEMP/tmp/
+            foreach f (${filelist})
+              cp -vs `readlink -f ${f}` $TSTORM_TEMP/tmp/
+            end
          endif
          set filelist = ()
       endif
@@ -219,7 +221,9 @@ if ( $#filelist != 0 ) then
       gcp -cd ${filelist} $TSTORM_TEMP/tmp/
    else
       mkdir -p $TSTORM_TEMP/tmp/
-      cp ${filelist} $TSTORM_TEMP/tmp/
+      foreach f (${filelist})
+          cp -vs `readlink -f ${f}` $TSTORM_TEMP/tmp/
+      end
    endif
 endif
 
