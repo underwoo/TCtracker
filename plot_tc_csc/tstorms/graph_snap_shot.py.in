@@ -19,10 +19,22 @@
 # 02110-1301, USA.
 # **********************************************************************
 
+"""Tropical Storm Snapshot Plot Generator
+
+This module generates the Tropical Storm Snapshot plot using tracking data
+generated from a GCM.
+"""
+
+__all__ = [
+    'generate_ori_data',
+    'generate_plot_data',
+    'write_plot_data',
+]
+
 import argparse
 import tstorms
-import tstorms.argparse as tsargparse
-from tstorms.ori_stat import cat_ori_files
+from . import argparse as tsargparse
+from .ori_stat import cat_ori_files
 import os
 import shutil
 import subprocess
