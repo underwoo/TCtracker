@@ -27,31 +27,49 @@ generated from a GCM.
 import argparse
 import os
 import shutil
-import subprocess
 import tempfile
+import numpy
+import matplotlib.pyplot
+import matplotlib.ticker
 
 from .. import argparse as tsargparse
-from ..config import gracebat
 from ..ori import ori
-from ._plot_helpers import template_env
 
-__all__ = [
-    'generate_plot_data',
-]
+__all__ = []
 
 
-def generate_plot_data(ori):
-    """Generate all data files required for 2D plot with Grace"""
+def generate_axes(ori, frac=False):
+    """Extract the axis data for lon, global, Northern and Southern
+    Hemispheres
 
-    ori.freq_ori(do_40ns=True, do_map=False, do_lon=True, do_lat=False)
-    for region in ['gl', 'nh', 'sh']:
-        _append_file(f'flon_{region}', f'grace_{region}.dat')
+    Parameters
+    ----------
+    ori : Class ori
+        The ori class to extract the axis data from
+    frac : bool, optional
+        Flag to determine if calcuating the y-axis data using the number of
+        total storms (True), or the number of years (Default)
 
+    Returns
+    -------
+    list * 4
+        Returns the xaxis, global, N_hemisphere, S_hemisphere
+    """
+    xaxis = [x*ori.DLON + 0.5*obs.DLON
+             for x in range(len(ori.storm_count.shape[0]))]
+    nh_mask = numpy.zeros(obs.storm_count.shape, dtype='bool')
+    nh_mask[:, obs_xaxis.index(0):] = True
+    if frac:
+        glo_axis = ori.storm_count.sum(1)/ori.storm_count.sum()
+        nhemi_axis = \
+            ori.storm_count.sum(1, where=nh_mask)/ori.storm_count.sum()
+    else:
+        num_years = ori.end_year - ori.start_year + 1
+        glo_axis = obs.storm_count.sum(1)/num_years
+        nhemi_axis = ori.storm_count.sum(1, where=nh_mask)/num_years
+    shemi_axis = glo_axis - nhemi_axis
 
-def _append_file(in_file, out_file):
-    with open(out_file, 'a') as outfile:
-        with open(in_file) as infile:
-            outfile.write(infile.read())
+    return xaxis, glo_axis, nhemi_axis, shemi_axis
 
 
 if __name__ == "__main__":
@@ -66,6 +84,12 @@ if __name__ == "__main__":
     argparser.add_argument("-H",
                            help="Indicates plot is number of hurricanes",
                            dest="do_hur",
+                           action='store_true')
+    argparser.add_argument("--fraction",
+                           help="Plot of fraction of storms instead of "
+                                "per-year average",
+                           metafar="frac",
+                           dest="frac",
                            action='store_true')
     argparser.add_argument("inDir",
                            help="Directory where tropical storm data are " +
@@ -95,39 +119,62 @@ if __name__ == "__main__":
     storm_type = 'Tropical Storm'
     if (args.do_hur):
         storm_type = 'Hurricane (CAT. 1-5)'
+    year_range = f"{args.beg_year:04d}-{args.end_year:04d}"
 
+    # obs axis
     obs = ori(args.obsDir, args.beg_year, args.end_year, 'obs')
+    obs_xaxis, obs_glo, obs_nh, obs_sh = generate_axes(obs, frac=args.frac)
+
+    # model axis
     model = ori(args.inDir, args.beg_year, args.end_year, 'model')
+    model_xaxis, model_glo, model_nh, model_sh = \
+        generate_axes(model, frac=args.frac)
+
+    # Configure the plot
+    fig, (ax_glo, ax_nh, ax_sh) = \
+        matplotlib.pyplot.subplots(3, 1,
+                                   sharex=True,
+                                   layout="constrained")
+    fig.suptitle(f"{storm_type} Count By Latitude ({year_range})")
+
+    # Global
+    model_plt, = ax_glo.plot(model_xaxis, model_glo, label=args.expName)
+    obs_plt, = ax_glo.plot(obs_xaxis, obs_glo, label="obs")
+    ax_glo.set_title('Global', loc="left")
+    ax_glo.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    ax_glo.set_ylim(0)
+    ax_glo.axhline(y=0)
+    ax_glo.grid(True, which="both")
+    ax_glo.legend(handels=[model_plt, obs_plt])
+
+    # Northern Hemisphere
+    model_nh_plt, = ax_nh.plot(model_xaxis, model_nh, label=args.expName)
+    obs_nh_plt, = ax_nh.plot(obs_xaxis, obs_nh, label="obs")
+    ax_nh.set_title('Northern Hemisphere', loc="left")
+    ax_nh.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    ax_nh.set_ylim(0)
+    ax_nh.axhline(y=0)
+    ax_nh.grid(True, which="both")
+    ax_nh.set_ylabel(f"no. {storm_type} per year")
+
+    # Southern Hemisphere
+    model_sh_plt, = ax_sh.plot(model_xaxis, model_sh, label=args.expName)
+    obs_sh_plt, = ax_sh.plot(obs_xaxis, obs_sh, label="obs")
+    ax_sh.set_title('Southern Hemisphere', loc="left")
+    ax_sh.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    ax_sh.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(30))
+    ax_sh.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(15))
+    ax_sh.set_ylim(0)
+    ax_sh.axhline(y=0)
+    ax_sh.grid(True, which="both")
+    ax_sh.set_ylabel(f"no. {storm_type} per year")
+    ax_sh.set_xlabel(u"longitude (\N{DEGREE SIGN})")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         os.chdir(tmpdir)
 
-        generate_plot_data(model)
-        generate_plot_data(obs)
-
-        by_longitude_par = template_env.get_template('by_longitude.par')
-        by_longitude_data = {
-            'storm_type': storm_type,
-            'year_start': args.beg_year,
-            'year_end': args.end_year,
-            'exp': [args.expName, 'obs'],
-        }
-        with open('by_longitude.par', 'w') as out:
-            out.write(by_longitude_par.render(by_longitude_data))
-
-        plot_filename = "by_longitude.ps"
-        grace_cmd = [
-            gracebat,
-            "-autoscale", "y",
-            "-printfile", plot_filename,
-            "-param", "by_longitude.par",
-            "-hardcopy",
-            "-graph", "0", "grace_sh.dat",
-            "-graph", "1", "grace_nh.dat",
-            "-graph", "2", "grace_gl.dat",
-        ]
-        subprocess.run(grace_cmd)
-
+        plot_filename = "by_longitude.pdf"
+        matplotlib.pyplot.savefig(plot_filename)
         shutil.copyfile(plot_filename,
                         os.path.join(args.outDir, plot_filename))
         print(f"Plot stored in '{os.path.join(args.outDir, plot_filename)}'")

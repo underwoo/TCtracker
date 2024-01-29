@@ -40,3 +40,5 @@ config.h
 tropical_storms_wsfc
 trajectory_analysis/trajectory_analysis_csc
 tstorms_driver/tstorms_driver
+
+/.venv

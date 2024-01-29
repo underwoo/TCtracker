@@ -35,6 +35,7 @@ __all__ = [
     'traj'
 ]
 
+
 class traj():
     """Class to hold data for a group of `traj_<year>` files
 
@@ -108,7 +109,8 @@ class traj():
     @property
     def duration_count(self):
         """Return a Counter of storm"""
-        return collections.Counter([int(x.duration/self.tsteps_day) for x in self.storms])
+        return collections.Counter([int(x.duration/self.tsteps_day)
+                                    for x in self.storms])
 
     @property
     def duration_frac(self):

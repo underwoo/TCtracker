@@ -1,6 +1,6 @@
 # **********************************************************************
 # TCtracker - Tropical Storm Detection
-# Copyright (C) 2021 Frederic Vitart, Joe Sirutis, Ming Zhao,
+# Copyright (C) 2021, 2023 Frederic Vitart, Joe Sirutis, Ming Zhao,
 # Kyle Olivo, Keren Rosado and Seth Underwood
 #
 # This program is free software; you can redistribute it and/or
@@ -22,17 +22,21 @@
 """
 This module contains classes and other helper routines to read
 ori_<year> files that contain tropical storm data.
+
+The ori_<year> data has the format:
+longitude(float), latitude(float), year(int), month(int), day(int), hour(int)
 """
 
 import tempfile
 import os
 import shutil
 import re
+import numpy
 
-from ..config import pkglibexecdir
-from .stat_ori_mask import stat_ori as _stat_ori
+from ..config import pkglibexecdir  # pyright: ignore [reportMissingImports]
+from .stat_ori_mask import stat_ori as _stat_ori  # pyright: ignore [reportMissingImports] # noqa: E501
 from .StormBox import StormBox
-from .freq_ori import freq_ori as _freq_ori
+from .freq_ori import freq_ori as _freq_ori  # pyright: ignore [reportMissingImports] # noqa: E501
 
 __all__ = ["ori",
            "StormBox"]
@@ -63,12 +67,18 @@ class ori():
 
         - type -- Holds `ori_type`
 
+        - storm_count -- Holds the total number of storms per 5x4 lat/lon box
+
         - stat_file -- Name of the statistics file using `ori_<start_year>`-
             `ori_<end_year>` files.
 
         - stats -- Dictionary of StormBox with region IDs as key.  Data
             obtained form data in `stat_file`.
     """
+
+    DLON = 5.0  # Longitude region delta
+    DLAT = 4.0  # Latitude region delta
+    SLAT = -86.0  # Lowest southern latitude
 
     def __init__(self,
                  ori_dir: str,
@@ -81,6 +91,45 @@ class ori():
         self.type = ori_type
         self.stat_file = self._gen_stats()
         self.stats = self._read_stats()
+
+        # Calculated Parameters
+        ix = int(360.0/self.DLON)
+        jx = int((90-self.SLAT)/self.DLAT)
+        # Closest indexes to 40s and 40n
+        # j40s = int((-40.0-self.SLAT)/self.DLAT) + 1
+        # j40n = jx - j40s + 1
+
+        # Hold the storm frequency map
+        self.storm_count = numpy.zeros((ix, jx), dtype=int)
+
+        for year in range(beg_year, end_year + 1):
+            # I'm assuming all ori_<year> files are available (even if empty)
+            # Will need to do some checking in the future
+            fname = os.path.join(self.directory, "ori_{:04d}".format(year))
+            with open(fname, 'r') as infile:
+                for line in infile:
+                    xcyc, ycyc, year, month, day, hour = line.split()
+                    # Until I find something better
+                    # year, month, day, hour are not used ATT
+                    xcyc = float(xcyc)
+                    ycyc = float(ycyc)
+                    year = int(year)
+                    month = int(month)
+                    day = int(day)
+                    hour = int(hour)
+
+                    # These are indices for the lon/lat frequency arrays
+                    # The added 0.5 is to center the values around the
+                    # DLAT/DLON divisions
+                    i = int(xcyc/self.DLON + 0.5)
+                    j = int((ycyc - self.SLAT)/self.DLAT + 0.5)
+
+                    # Deal with the wrap around indices
+                    if i < 0:
+                        i = ix + i
+                    elif i >= ix:
+                        i = i - ix
+                    self.storm_count[i][j] += 1
 
     def cat_ori_files(self, fname="ori"):
         """

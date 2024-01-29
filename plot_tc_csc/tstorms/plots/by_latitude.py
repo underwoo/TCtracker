@@ -1,6 +1,6 @@
 # **********************************************************************
 # TCtracker - Tropical Storm Detection
-# Copyright (C) 2021 Frederic Vitart, Joe Sirutis, Ming Zhao,
+# Copyright (C) 2021, 2023 Frederic Vitart, Joe Sirutis, Ming Zhao,
 # Kyle Olivo, Keren Rosado and Seth Underwood
 #
 # This program is free software; you can redistribute it and/or
@@ -27,26 +27,15 @@ generated from a GCM.
 import argparse
 import os
 import shutil
-import subprocess
 import tempfile
+import matplotlib.pyplot
+import matplotlib.ticker
 
 from .. import argparse as tsargparse
-from ..config import gracebat
 from ..ori import ori
-from ._plot_helpers import template_env
 
 __all__ = [
-    'generate_plot_data',
 ]
-
-
-def generate_plot_data(ori):
-    """Generate all data files required for 2D plot with Grace"""
-    ori.freq_ori(do_40ns=True, do_map=False, do_lon=False, do_lat=True)
-    with open("grace.dat", 'a') as outfile:
-        with open("flat") as infile:
-            outfile.write(infile.read())
-
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
@@ -60,6 +49,12 @@ if __name__ == "__main__":
     argparser.add_argument("-H",
                            help="Indicates plot is number of hurricanes",
                            dest="do_hur",
+                           action='store_true')
+    argparser.add_argument("--fraction",
+                           help="Plot of fraction of storms instead of "
+                                "per-year average",
+                           metafar="frac",
+                           dest="frac",
                            action='store_true')
     argparser.add_argument("inDir",
                            help="Directory where tropical storm data are " +
@@ -89,37 +84,46 @@ if __name__ == "__main__":
     storm_type = 'Tropical Storm'
     if (args.do_hur):
         storm_type = 'Hurricane (CAT. 1-5)'
+    year_range = f"{args.beg_year:04d}-{args.end_year:04d}"
 
+    # obs axis
     obs = ori(args.obsDir, args.beg_year, args.end_year, 'obs')
+    if args.frac:
+        obs_yaxis = obs.storm_count.sum(0)/obs.storm_count.sum()
+    else:
+        obs_yaxis = obs.storm_count.sum(0)/(obs.end_year-obs.start_year+1)
+    obs_xaxis = [x * obs.DLAT + obs.SLAT + 0.5*obs.DLAT
+                 for x in range(len(obs_yaxis))]
+    # Model axis
     model = ori(args.inDir, args.beg_year, args.end_year, 'model')
+    if args.frac:
+        model_yaxis = model.storm_count.sum(0)/model.storm_count.sum()
+    else:
+        model_yaxis = \
+            model.storm_count.sum(0)/(model.end_year - model.start_year + 1)
+    model_xaxis = [x*obs.DLAT + obs.SLAT + 0.5*obs.DLAT
+                   for x in range(len(obs_yaxis))]
+
+    # Configure the plot
+    fig, ax = matplotlib.pyplot.subplots()
+    fig.suptitle(f"{storm_type} Count By Latitude ({year_range})")
+    obs, = ax.plot(obs_xaxis, obs_yaxis, label="obs")
+    model, = ax.plot(model_xaxis, model_yaxis, label=args.expName)
+    ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(10))
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(5))
+    ax.set_xlim(-40, 40)
+    ax.set_xlabel(u"latitude (\N{DEGREE SIGN}N)")
+    ax.set_ylim(0)
+    ax.set_ylabel(f"no. {storm_type} per year")
+    ax.legend(handles=[obs, model])
+    ax.grid(True)
+    ax.axhline(y=0)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         os.chdir(tmpdir)
 
-        generate_plot_data(model)
-        generate_plot_data(obs)
-
-        by_latitude_par = template_env.get_template('by_latitude.par')
-        by_latitude_data = {
-            'storm_type': storm_type,
-            'year_start': args.beg_year,
-            'year_end': args.end_year,
-            'exp': [args.expName, 'obs'],
-        }
-        with open('by_latitude.par', 'w') as out:
-            out.write(by_latitude_par.render(by_latitude_data))
-
-        plot_filename = "by_latitude.ps"
-        grace_cmd = [
-            gracebat,
-            "-autoscale", "y",
-            "-printfile", plot_filename,
-            "-param", "by_latitude.par",
-            "-hardcopy",
-            "grace.dat",
-        ]
-        subprocess.run(grace_cmd)
-
+        plot_filename = "by_latitude.pdf"
+        matplotlib.pyplot.savefig(plot_filename)
         shutil.copyfile(plot_filename,
                         os.path.join(args.outDir, plot_filename))
         print(f"Plot stored in '{os.path.join(args.outDir, plot_filename)}'")
